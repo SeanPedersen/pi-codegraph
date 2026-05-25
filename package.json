@@ -1,5 +1,5 @@
 {
-  "name": "pi-codegraph",
+  "name": "@sean_pedersen/pi-codegraph",
   "version": "0.1.0",
   "description": "Pi coding agent extension that wires codegraph (tree-sitter knowledge graph) as an MCP sidecar and injects usage instructions into the system prompt",
   "keywords": ["pi-package"],

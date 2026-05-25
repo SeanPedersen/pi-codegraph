@@ -22,7 +22,7 @@ If the project has no `.codegraph/` directory the extension is a no-op.
 ### As a pi package
 
 ```
-/add pi-codegraph
+/add @sean_pedersen/pi-codegraph
 ```
 
 ### Manual (git)
