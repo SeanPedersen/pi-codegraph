@@ -1,0 +1,23 @@
+{
+  "name": "pi-codegraph",
+  "version": "0.1.0",
+  "description": "Pi coding agent extension that wires codegraph (tree-sitter knowledge graph) as an MCP sidecar and injects usage instructions into the system prompt",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SeanPedersen/pi-codegraph"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
