@@ -1,6 +1,6 @@
 # pi-codegraph
 
-A [pi coding agent](https://github.com/earendil-works/pi) extension that wires [codegraph](https://github.com/SeanPedersen/codegraph) as an MCP sidecar and injects structured usage instructions into the system prompt.
+A [pi coding agent](https://github.com/earendil-works/pi) extension that wires [codegraph](https://colbymchenry.github.io/codegraph/) as an MCP sidecar and injects structured usage instructions into the system prompt.
 
 ## What it does
 
@@ -14,7 +14,7 @@ If the project has no `.codegraph/` directory the extension is a no-op.
 
 ## Requirements
 
-- [`codegraph`](https://github.com/SeanPedersen/codegraph) CLI must be on `$PATH`
+- [`codegraph`](https://colbymchenry.github.io/codegraph/) CLI must be on `$PATH`
 - A `.codegraph/` index must exist in the project root (run `codegraph init -i` to build one)
 
 ## Install
