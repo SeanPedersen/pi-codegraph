@@ -19,6 +19,8 @@ If the project has no `.codegraph/` directory the extension is a no-op.
 
 ## Install
 
+Recommneded to install semble as well: https://github.com/MinishLab/semble
+
 ### As a pi package
 
 ```

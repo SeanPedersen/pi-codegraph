@@ -8,7 +8,15 @@ import { Type } from "typebox";
 const SYSTEM_PROMPT_ADDITION = `
 ## CodeGraph
 
-This project has a CodeGraph index — a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads return structural information grep cannot.
+This project has a CodeGraph index — a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads return structural information grep cannot. Use Semble search to find the right symbol, then navigate with CodeGraph for relevant context.
+
+## Semble Search
+
+**Step 0 — locate the code symbol (skip only if you already know the exact name):**
+
+\`semble search "concept or description" .\`
+
+Semble bridges vocabulary mismatches (e.g. \`"tool call limit"\` → \`MAX_TOOL_ROUNDS\`). Get the symbol name + file, then proceed to step 1.
 
 ### Tool Choice
 
