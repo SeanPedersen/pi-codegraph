@@ -10,9 +10,29 @@ const SYSTEM_PROMPT_ADDITION = `
 
 This project has a CodeGraph index — a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads return structural information grep cannot.
 
-### When to prefer codegraph over native search
+### Tool Choice
 
-Use codegraph for **structural** questions — what calls what, what would break, where is X defined, what is X's signature — and for searching symbol names, string literals, or comments in source files. Use native grep/read only when you need **regex patterns** codegraph doesn't support, or for content in **non-indexed files** (non-code files like .txt, .md, logs, configs, generated output).
+- Structural questions: use CodeGraph. This includes definitions, signatures, callers/callees, impact, architecture, data flow, request construction, persistence, resume/load behavior, and "what happens/current behavior" questions.
+- Literal questions: use native search/read only for exact strings, comments, logs, config text, or a small range already identified by CodeGraph.
+- Do not use native search/read, codegraph_explore, large owner symbols, or broad symbol searches for read-only structural/behavior answers.
+
+### Micro-Budget
+
+- For read-only structural/behavior questions, spend at most 2 CodeGraph calls by default:
+  1. codegraph_context(includeCode:false, maxNodes:8) to find decisive symbols.
+  2. One codegraph_node(includeCode:true) for the single decisive boundary, or codegraph_trace if the answer is specifically a path.
+- If the first call already shows the decisive type/signature/relationship, answer immediately without a second call.
+- Use a third CodeGraph call only if the first two results conflict or the user explicitly asks for more proof.
+- If uncertainty remains after the budget, state it as a caveat instead of investigating adjacent plumbing.
+
+### Boundaries
+
+- Prefer decisive boundary symbols over plumbing: public types/schemas, save-load functions, request builders, command/route handlers, adapters.
+- Do not inspect parser helpers, option/message types, UI previews, store internals, callbacks, or owner components/classes unless the decisive boundary explicitly delegates there.
+- Do not prove negatives by exhaustive search. If the boundary lacks a field/path, answer from that and mention the caveat.
+- Avoid duplicate source retrieval. Never fetch source for the same symbol twice.
+- Use codegraph_explore only during implementation work when several exact small symbols are needed.
+- Do not run git diff / git status for read-only code questions.
 `;
 
 interface McpTool {
