@@ -1,5 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { createInterface } from "node:readline";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
+import { createInterface, type Interface } from "node:readline";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -60,18 +60,113 @@ interface McpClient {
   destroy(): void;
 }
 
+const clientsByCwd = new Map<string, McpClient>();
+
+let cleanupHooked = false;
+
+// codegraph spawns a 3-process tree (node launcher -> node -> native binary) that does NOT
+// self-terminate on stdin EOF, so the OS will not reap it when pi dies abruptly. The
+// session_shutdown handler covers graceful exits; this backstop covers process.exit() and
+// terminal-driven signals. SIGINT is intentionally excluded: pi uses it to cancel the current
+// agent turn, not to exit, so hooking it would force-kill pi on the first Ctrl-C.
+function ensureProcessCleanup() {
+  if (cleanupHooked) return;
+  cleanupHooked = true;
+  const killAll = () => {
+    for (const client of clientsByCwd.values()) client.destroy();
+  };
+  process.once("exit", killAll);
+  for (const sig of ["SIGTERM", "SIGHUP"] as const) {
+    process.once(sig, () => {
+      killAll();
+      process.kill(process.pid, sig);
+    });
+  }
+}
+
+function rejectPending(pending: Map<number, Pending>, error: Error) {
+  for (const p of pending.values()) {
+    p.reject(error);
+  }
+  pending.clear();
+}
+
+// Recursively collect descendant PIDs of rootPid by walking the ps ppid table. Synchronous so
+// it can run inside a process "exit" handler. Returns [] on any failure (best-effort cleanup).
+function descendantPids(rootPid: number): number[] {
+  try {
+    const out = execSync("ps -axo pid=,ppid=", { encoding: "utf8" });
+    const children = new Map<number, number[]>();
+    for (const line of out.split("\n")) {
+      const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+      if (!match) continue;
+      const pid = Number(match[1]);
+      const ppid = Number(match[2]);
+      const siblings = children.get(ppid);
+      if (siblings) siblings.push(pid);
+      else children.set(ppid, [pid]);
+    }
+    const descendants: number[] = [];
+    const stack = [rootPid];
+    while (stack.length) {
+      const parent = stack.pop()!;
+      for (const child of children.get(parent) ?? []) {
+        descendants.push(child);
+        stack.push(child);
+      }
+    }
+    return descendants;
+  } catch {
+    return [];
+  }
+}
+
+// The native codegraph worker can setsid into its own process group, escaping a group-kill of
+// the launcher. So we snapshot the descendant PIDs BEFORE signaling, then signal both the
+// launcher's group (cheap, reaps in-group processes) and every descendant by direct PID (reaches
+// the escaped worker regardless of its group).
+function killProcessTree(proc: ChildProcess) {
+  const { pid } = proc;
+  if (!pid) {
+    proc.kill("SIGTERM");
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    return;
+  }
+
+  const targets = descendantPids(pid);
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch { }
+  for (const target of [...targets, pid]) {
+    try {
+      process.kill(target, "SIGTERM");
+    } catch { }
+  }
+}
+
 function startMcpClient(cwd: string): Promise<McpClient> {
   return new Promise((resolveClient, rejectClient) => {
     const proc: ChildProcess = spawn("codegraph", ["serve", "--mcp"], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
+      detached: process.platform !== "win32",
+      windowsHide: true,
     });
 
     let nextId = 1;
     const pending = new Map<number, Pending>();
+    let settled = false;
+    let destroyed = false;
 
-    const rl = createInterface({ input: proc.stdout! });
+    const rl: Interface = createInterface({ input: proc.stdout! });
     rl.on("line", (line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
@@ -90,7 +185,33 @@ function startMcpClient(cwd: string): Promise<McpClient> {
       else p.resolve(msg.result);
     });
 
-    proc.on("error", rejectClient);
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      rejectPending(pending, new Error("codegraph MCP client destroyed"));
+      rl.close();
+      proc.stdin?.end();
+      killProcessTree(proc);
+    }
+
+    function failStartup(error: Error) {
+      if (settled) return;
+      settled = true;
+      destroy();
+      rejectClient(error);
+    }
+
+    proc.once("error", failStartup);
+    proc.once("exit", (code, signal) => {
+      const error = new Error(
+        `codegraph MCP exited${code === null ? "" : ` with code ${code}`}${signal ? ` (${signal})` : ""}`
+      );
+      rejectPending(pending, error);
+      if (!settled) {
+        settled = true;
+        rejectClient(error);
+      }
+    });
 
     function rpc<T>(method: string, params?: unknown): Promise<T> {
       const id = nextId++;
@@ -113,6 +234,8 @@ function startMcpClient(cwd: string): Promise<McpClient> {
       clientInfo: { name: "pi-codegraph", version: "1.0.0" },
     })
       .then(() => {
+        if (destroyed) return;
+        settled = true;
         notify("notifications/initialized");
         resolveClient({
           listTools: () =>
@@ -127,10 +250,10 @@ function startMcpClient(cwd: string): Promise<McpClient> {
                 .map((c) => c.text ?? "")
                 .join("\n")
             ),
-          destroy: () => proc.kill(),
+          destroy,
         });
       })
-      .catch(rejectClient);
+      .catch((error) => failStartup(error instanceof Error ? error : new Error(String(error))));
   });
 }
 
@@ -138,9 +261,14 @@ export default async function (pi: ExtensionAPI) {
   const cwd = process.cwd();
   if (!existsSync(join(cwd, ".codegraph"))) return;
 
+  clientsByCwd.get(cwd)?.destroy();
+  clientsByCwd.delete(cwd);
+
   let client: McpClient;
   try {
     client = await startMcpClient(cwd);
+    clientsByCwd.set(cwd, client);
+    ensureProcessCleanup();
   } catch {
     return;
   }
@@ -207,5 +335,6 @@ export default async function (pi: ExtensionAPI) {
       } catch { }
     }
     client.destroy();
+    clientsByCwd.delete(cwd);
   });
 }
