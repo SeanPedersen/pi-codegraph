@@ -20,15 +20,19 @@ Semble bridges vocabulary mismatches (e.g. \`"tool call limit"\` → \`MAX_TOOL_
 
 ### Tool Choice
 
-- Structural questions: use CodeGraph. This includes definitions, signatures, callers/callees, impact, architecture, data flow, request construction, persistence, resume/load behavior, and "what happens/current behavior" questions.
+- **Almost any question** — "how does X work", architecture, flow ("how does X reach Y"), surveying an area, or pre-edit impact → codegraph_explore (PRIMARY — accepts a plain question, no exact symbol names needed; returns verbatim source grouped by file plus a compact blast radius showing dependents and covering tests; one call is usually all you need).
+- Symbol location only → codegraph_search.
+- Caller/callee relationships → codegraph_callers / codegraph_callees.
+- Deeper impact analysis beyond explore's blast radius → codegraph_impact.
+- One specific symbol's full source, or an overloaded name → codegraph_node.
+- Store/handler actions (Zustand, Redux, Pinia, MobX, route maps) are indexed as real symbols — use codegraph_explore or codegraph_node directly; no need to read the whole store file.
 - Literal questions: use native search/read only for exact strings, comments, logs, config text, or a small range already identified by CodeGraph.
-- Do not use native search/read, codegraph_explore, large owner symbols, or broad symbol searches for read-only structural/behavior answers.
 
 ### Micro-Budget
 
 - For read-only structural/behavior questions, spend at most 2 CodeGraph calls by default:
-  1. codegraph_context(includeCode:false, maxNodes:8) to find decisive symbols.
-  2. One codegraph_node(includeCode:true) for the single decisive boundary, or codegraph_trace if the answer is specifically a path.
+  1. codegraph_explore with a plain question — source + blast radius in one shot.
+  2. One codegraph_node(includeCode:true) for the single decisive boundary if needed.
 - If the first call already shows the decisive type/signature/relationship, answer immediately without a second call.
 - Use a third CodeGraph call only if the first two results conflict or the user explicitly asks for more proof.
 - If uncertainty remains after the budget, state it as a caveat instead of investigating adjacent plumbing.
@@ -36,10 +40,9 @@ Semble bridges vocabulary mismatches (e.g. \`"tool call limit"\` → \`MAX_TOOL_
 ### Boundaries
 
 - Prefer decisive boundary symbols over plumbing: public types/schemas, save-load functions, request builders, command/route handlers, adapters.
-- Do not inspect parser helpers, option/message types, UI previews, store internals, callbacks, or owner components/classes unless the decisive boundary explicitly delegates there.
+- Do not inspect parser helpers, option/message types, UI previews, callbacks, or owner components/classes unless the decisive boundary explicitly delegates there.
 - Do not prove negatives by exhaustive search. If the boundary lacks a field/path, answer from that and mention the caveat.
 - Avoid duplicate source retrieval. Never fetch source for the same symbol twice.
-- Use codegraph_explore only during implementation work when several exact small symbols are needed.
 - Do not run git diff / git status for read-only code questions.
 `;
 
